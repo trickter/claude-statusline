@@ -2,7 +2,9 @@
 
 給 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 用的雙行狀態列。只顯示有用的，其餘省略。
 
-![screenshot](screenshot.png)
+| Dark | Light |
+|------|-------|
+| ![dark](screenshot-dark.png) | ![light](screenshot-light.png) |
 
 [English](README.md) | **繁體中文**
 
@@ -76,6 +78,20 @@ my-project │ main +2 ~1 ?3 │ .venv (3.12) │ NORMAL
 - `CACHE_TTL` — API 配額更新頻率，單位秒（預設 60）
 - `pct_color()` — 顏色閾值
 - `ICON_*` — 替換為你偏好的 Nerd Font 圖示
+
+### 深色 / 淺色模式
+
+狀態列會自動偵測終端背景色：
+
+1. **macOS 系統外觀** — 讀取 `AppleInterfaceStyle`
+2. **`COLORFGBG`** — 部分終端（iTerm2、rxvt 等）會設定此變數
+3. **預設** — 未偵測到時使用深色模式
+
+手動覆蓋：在啟動 Claude Code 前設定 `STATUSLINE_THEME`：
+
+```sh
+export STATUSLINE_THEME=light  # 可選值：dark, light, auto（預設）
+```
 
 ## 致謝
 

@@ -18,18 +18,58 @@ eval "$(jq -r '
 
 dir_name="${cwd##*/}"
 
+# --- Theme detection ---
+# Override with STATUSLINE_THEME=dark|light|auto (default: auto)
+detect_theme() {
+    local theme="${STATUSLINE_THEME:-auto}"
+    if [ "$theme" != "auto" ]; then echo "$theme"; return; fi
+
+    # macOS system appearance
+    if defaults read -g AppleInterfaceStyle &>/dev/null; then
+        echo "dark"; return
+    fi
+
+    # COLORFGBG env var (e.g. "15;0" → bg=0 is dark)
+    if [ -n "$COLORFGBG" ]; then
+        local bg="${COLORFGBG##*;}"
+        if [ "$bg" -lt 8 ] 2>/dev/null; then
+            echo "dark"
+        else
+            echo "light"
+        fi
+        return
+    fi
+
+    echo "dark"
+}
+
+THEME=$(detect_theme)
+
 # --- Colors ---
 RST=$'\033[0m'
 BOLD=$'\033[1m'
-DIM=$'\033[2m'
-CYAN=$'\033[36m'
-GREEN=$'\033[32m'
-YELLOW=$'\033[33m'
-RED=$'\033[31m'
-MAGENTA=$'\033[35m'
-BLUE=$'\033[34m'
-BG_RED=$'\033[41m'
-WHITE_BOLD=$'\033[1;37m'
+
+if [ "$THEME" = "light" ]; then
+    DIM=$'\033[90m'              # bright black (gray) — visible on light bg
+    CYAN=$'\033[36m'
+    GREEN=$'\033[32m'
+    YELLOW=$'\033[33m'
+    RED=$'\033[31m'
+    MAGENTA=$'\033[35m'
+    BLUE=$'\033[34m'
+    BG_RED=$'\033[41m'
+    WHITE_BOLD=$'\033[1;30m'     # bold black — for alert badge text on light bg
+else
+    DIM=$'\033[2m'
+    CYAN=$'\033[36m'
+    GREEN=$'\033[32m'
+    YELLOW=$'\033[33m'
+    RED=$'\033[31m'
+    MAGENTA=$'\033[35m'
+    BLUE=$'\033[34m'
+    BG_RED=$'\033[41m'
+    WHITE_BOLD=$'\033[1;37m'
+fi
 
 # --- Nerd Font Icons (all MD range, U+F0000+) ---
 ICON_MODEL="󰚩"     # nf-md-robot

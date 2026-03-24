@@ -2,7 +2,9 @@
 
 A two-line status line for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Shows what matters, skips what doesn't.
 
-![screenshot](screenshot.png)
+| Dark | Light |
+|------|-------|
+| ![dark](screenshot-dark.png) | ![light](screenshot-light.png) |
 
 **English** | [繁體中文](README.zh-TW.md)
 
@@ -76,6 +78,20 @@ Edit `statusline-command.sh`:
 - `CACHE_TTL` — API quota refresh interval in seconds (default: 60)
 - `pct_color()` — color thresholds
 - `ICON_*` — swap with your preferred Nerd Font glyphs
+
+### Dark / Light Mode
+
+The status line auto-detects your terminal background:
+
+1. **macOS system appearance** — reads `AppleInterfaceStyle`
+2. **`COLORFGBG`** — set by some terminals (iTerm2, rxvt, etc.)
+3. **Fallback** — defaults to dark
+
+To override, set `STATUSLINE_THEME` before launching Claude Code:
+
+```sh
+export STATUSLINE_THEME=light  # or: dark, auto (default)
+```
 
 ## Credits
 
