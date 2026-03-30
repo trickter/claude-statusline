@@ -4,7 +4,7 @@
 # Line 1: Model │ Context Bar (16 segs) │ Cost │ 5h usage │ 7d usage
 # Line 2: Directory │ Git Branch & Status │ Venv │ Vim
 
-input=$(< /dev/stdin)
+input=$(cat)
 now=$(date +%s)
 
 # --- Extract all values in a single jq call ---
@@ -12,64 +12,25 @@ eval "$(jq -r '
     @sh "model=\(.model.display_name // "?")",
     @sh "cwd=\(.workspace.current_dir // ".")",
     @sh "used_pct=\(.context_window.used_percentage // 0)",
+    @sh "ctx_size=\(.context_window.context_window_size // 200000)",
     @sh "cost=\(.cost.total_cost_usd // 0)",
     @sh "vim_mode=\(.vim.mode // "")"
 ' <<< "$input")"
 
 dir_name="${cwd##*/}"
 
-# --- Theme detection ---
-# Override with STATUSLINE_THEME=dark|light|auto (default: auto)
-detect_theme() {
-    local theme="${STATUSLINE_THEME:-auto}"
-    if [ "$theme" != "auto" ]; then echo "$theme"; return; fi
-
-    # macOS system appearance
-    if defaults read -g AppleInterfaceStyle &>/dev/null; then
-        echo "dark"; return
-    fi
-
-    # COLORFGBG env var (e.g. "15;0" → bg=0 is dark)
-    if [ -n "$COLORFGBG" ]; then
-        local bg="${COLORFGBG##*;}"
-        if [ "$bg" -lt 8 ] 2>/dev/null; then
-            echo "dark"
-        else
-            echo "light"
-        fi
-        return
-    fi
-
-    echo "dark"
-}
-
-THEME=$(detect_theme)
-
 # --- Colors ---
 RST=$'\033[0m'
 BOLD=$'\033[1m'
-
-if [ "$THEME" = "light" ]; then
-    DIM=$'\033[90m'              # bright black (gray) — visible on light bg
-    CYAN=$'\033[36m'
-    GREEN=$'\033[32m'
-    YELLOW=$'\033[33m'
-    RED=$'\033[31m'
-    MAGENTA=$'\033[35m'
-    BLUE=$'\033[34m'
-    BG_RED=$'\033[41m'
-    WHITE_BOLD=$'\033[1;30m'     # bold black — for alert badge text on light bg
-else
-    DIM=$'\033[2m'
-    CYAN=$'\033[36m'
-    GREEN=$'\033[32m'
-    YELLOW=$'\033[33m'
-    RED=$'\033[31m'
-    MAGENTA=$'\033[35m'
-    BLUE=$'\033[34m'
-    BG_RED=$'\033[41m'
-    WHITE_BOLD=$'\033[1;37m'
-fi
+DIM=$'\033[90m'
+CYAN=$'\033[36m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+RED=$'\033[31m'
+MAGENTA=$'\033[35m'
+BLUE=$'\033[34m'
+BG_RED=$'\033[41m'
+WHITE_BOLD=$'\033[1;37m'
 
 # --- Nerd Font Icons (all MD range, U+F0000+) ---
 ICON_MODEL="󰚩"     # nf-md-robot
@@ -94,10 +55,12 @@ pct_color() {
     fi
 }
 
-# --- Context percentage ---
+# --- Context usage ---
 pct_int=${used_pct%.*}
 pct_int=${pct_int:-0}
 CTX_COLOR=$(pct_color "$pct_int")
+ctx_total_k=$(( ctx_size / 1000 ))
+ctx_used_k=$(( ctx_size * pct_int / 100 / 1000 ))
 
 # --- Progress bar ---
 filled=$(( (pct_int * BAR_SEGMENTS + 50) / 100 ))
@@ -169,13 +132,16 @@ CACHE_TTL=60
 
 refresh_usage_cache() {
     if ! mkdir "$LOCK_FILE" 2>/dev/null; then
-        lock_age=$(( now - $(stat -f%m "$LOCK_FILE" 2>/dev/null || echo 0) ))
+        lock_age=$(( now - $(stat -c%Y "$LOCK_FILE" 2>/dev/null || echo 0) ))
         [ "$lock_age" -gt 60 ] && rm -r "$LOCK_FILE" 2>/dev/null || return
         mkdir "$LOCK_FILE" 2>/dev/null || return
     fi
     (
         # Try macOS Keychain first, then fall back to credentials file
-        token=$(security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)
+        token=""
+        if command -v security &>/dev/null; then
+            token=$(security find-generic-password -s "Claude Code-credentials" -a "$(whoami)" -w 2>/dev/null | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)
+        fi
         [ -z "$token" ] && token=$(jq -r '.claudeAiOauth.accessToken // empty' "$HOME/.claude/.credentials.json" 2>/dev/null)
         if [ -n "$token" ]; then
             resp=$(curl -s --max-time 5 \
@@ -211,14 +177,14 @@ usage_segment() {
     local color reset_str
     color=$(pct_color "$pct")
     reset_str=$(format_countdown "$reset_epoch")
-    echo "${SEP}${DIM}${label}${RST} ${color}${pct}%${RST} ${DIM}↺ ${reset_str}${RST}"
+    echo "${SEP}${DIM}${label}${RST} ${color}${pct}%${RST}"
 }
 
 if [ ! -f "$USAGE_CACHE" ]; then
     [ -d "$CACHE_DIR" ] || mkdir -p "$CACHE_DIR" 2>/dev/null
     refresh_usage_cache
 else
-    cache_age=$(( now - $(stat -f%m "$USAGE_CACHE" 2>/dev/null || echo 0) ))
+    cache_age=$(( now - $(stat -c%Y "$USAGE_CACHE" 2>/dev/null || echo 0) ))
     [ "$cache_age" -gt "$CACHE_TTL" ] && refresh_usage_cache
 fi
 
@@ -237,9 +203,9 @@ fi
 line1_tail="${SEP}${DIM}${ICON_COST} ${cost_str}${RST}${usage_5h}${usage_7d}"
 
 if [ "$pct_int" -ge 90 ]; then
-    line1="${BG_RED}${WHITE_BOLD} ${ICON_WARN} CTX ${pct_int}% ${RST} ${CYAN}${BOLD}${ICON_MODEL} ${model}${RST}${SEP}${CTX_COLOR}${bar}${RST}${line1_tail}"
+    line1="${BG_RED}${WHITE_BOLD} ${ICON_WARN} CTX ${ctx_used_k}k/${ctx_total_k}k ${RST} ${CYAN}${BOLD}${ICON_MODEL} ${model}${RST}${SEP}${DIM}${ICON_CTX} CTX${RST} ${CTX_COLOR}${ctx_used_k}k${RST}${DIM}/${ctx_total_k}k${RST}${line1_tail}"
 else
-    line1="${CYAN}${BOLD}${ICON_MODEL} ${model}${RST}${SEP}${DIM}${ICON_CTX}${RST} ${CTX_COLOR}${bar} ${pct_int}%${RST}${line1_tail}"
+    line1="${CYAN}${BOLD}${ICON_MODEL} ${model}${RST}${SEP}${DIM}${ICON_CTX} CTX${RST} ${CTX_COLOR}${ctx_used_k}k${RST}${DIM}/${ctx_total_k}k${RST}${line1_tail}"
 fi
 
 line2="${BLUE}${ICON_DIR} ${dir_name}${RST}${git_info}${venv_str}${vim_str}"
